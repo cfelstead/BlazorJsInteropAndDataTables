@@ -1,0 +1,165 @@
+﻿@page "/weather"
+@implements IAsyncDisposable
+@inject IJSRuntime jsRuntime
+
+<PageTitle>Weather</PageTitle>
+
+<h1>Weather</h1>
+
+<p>This component demonstrates showing data.</p>
+
+<button class="btn btn-primary" @onclick="ReloadWithNewData">Reload New Data</button>
+
+@if (forecasts == null)
+{
+    <p><em>Loading...</em></p>
+}
+else
+{
+    <table id="@dataTableRef" class="table">
+        <thead>
+            <tr>
+                <th>Date</th>
+                <th>City</th>
+                <th aria-label="Temperature in Celsius">Temp. (C)</th>
+                <th aria-label="Temperature in Farenheit">Temp. (F)</th>
+                <th>Summary</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var forecast in forecasts)
+            {
+                <tr>
+                    <td>@forecast.Date.ToShortDateString()</td>
+                    <td>@forecast.City</td>
+                    <td>@forecast.TemperatureC</td>
+                    <td>@forecast.TemperatureF</td>
+                    <td>@forecast.Summary</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    private WeatherForecast[]? forecasts;
+    private Guid? dataTableRef; // This guid will be used as the javascript reference. It is null when there is no data.
+    private IJSObjectReference? module;
+    private bool renderNewDataTable; // A flag to indicate if we need to render a new DataTable via JavaScript.
+    private bool removeExistingDataTable; // A flag to indicate if we need to remove the existing DataTable before rendering a new one.
+
+
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadNewData(); // Load in data when there is nothing
+    }
+
+    protected async override Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            module = await jsRuntime.InvokeAsync<IJSObjectReference>("import",
+                "./Components/Pages/Weather.razor.js");
+        }
+
+        if (renderNewDataTable // Only run when the flag indicates it is necessary
+            && module is not null)
+        {
+            await module.InvokeVoidAsync("initializeDataTable", dataTableRef);
+            renderNewDataTable = false;
+        }
+
+        if (removeExistingDataTable // Only run when the flag indicates it is necessary
+            && module is not null)
+        {
+            await module.InvokeVoidAsync("destroyDataTable", dataTableRef);
+            removeExistingDataTable = false;
+        }
+    }
+
+    private async Task ReloadWithNewData()
+    {
+        await DestroyExistingData(); // Clear down
+        await LoadNewData(); // Then rebuild from scratch
+    }
+
+    private async Task DestroyExistingData()
+    {
+        removeExistingDataTable = true; // Set the flag to remove the existing DataTable elements added by JavaScript.
+        await Task.Delay(1); // Need a millisecond for the actions to be attempted
+        StateHasChanged(); // Forces the component to re-render with the new empty state
+        await Task.Delay(1); // Need a millisecond for the actions to be attempted
+        forecasts = null; // Can only now clear the forecasts as we needed the table to remain for the JavaScript to remove the DataTable.
+        StateHasChanged(); // Forces the component to re-render with the new empty state
+    }
+
+    private async Task LoadNewData()
+    {
+        forecasts = null; // Empty the data so that the loading message is shown
+        await Task.Delay(1500); // Simulate a delay to mimic data loading from an API or database
+
+
+
+        dataTableRef = Guid.NewGuid(); // Set a new GUID for the table reference with JavaScript
+        renderNewDataTable = true; // Set the flag to render a new DataTable via JavaScript.
+
+        string[] cities = ["London", "Madrid", "Dublin", "Paris", "Berlin"];
+        var startDate = DateOnly.FromDateTime(DateTime.Now);
+        var summaries = new[] { "Freezing", "Bracing", "Chilly", "Cool", "Mild", "Warm", "Balmy", "Hot", "Sweltering", "Scorching" };
+        List<WeatherForecast> forecastResults = [];
+        foreach (var city in cities)
+        {
+            forecastResults.AddRange(
+               Enumerable.Range(1, 5).Select(index => new WeatherForecast
+               {
+                   Date = startDate.AddDays(index),
+                   City = city,
+                   TemperatureC = Random.Shared.Next(-20, 55),
+                   Summary = summaries[Random.Shared.Next(summaries.Length)]
+               }));
+        }
+        forecasts = forecastResults.OrderBy(x => x.Date).ThenBy(x => x.City).ToArray();
+        
+        StateHasChanged(); // Forces the component to re-render with the new data and the OnAfterRenderAsync method to run again with the Javascript to make a new datatable.
+    }
+
+    async ValueTask IAsyncDisposable.DisposeAsync()
+    {
+        if (module is not null && dataTableRef.HasValue)
+        {
+            try
+            {
+                await module.InvokeVoidAsync("destroyDataTable", dataTableRef);
+                dataTableRef = null; // Clear the reference after destroying the DataTable
+            }
+            catch (JSDisconnectedException)
+            {
+                // Ignore disconnection on dispose
+            }
+        }
+
+
+        
+        if (module is not null)
+        {
+            try
+            {
+                await module.DisposeAsync();
+            }
+            catch (JSDisconnectedException)
+            {
+            }
+        }
+    }
+
+
+    private class WeatherForecast
+    {
+        public DateOnly Date { get; set; }
+        public string? City { get; set; }
+        public int TemperatureC { get; set; }
+        public string? Summary { get; set; }
+        public int TemperatureF => 32 + (int)(TemperatureC / 0.5556);
+    }
+}
