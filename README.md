@@ -1,0 +1,3 @@
+# Using DataTables.net with Blazor (InteractiveServer)
+
+I have noticed a number of people struggle understanding JsInterop with Blazor and getting javascript libraries working. This example (see the weather page) has a working example of using DataTable.net with Blazor. Almost all the problems are solved by correctly working backwards and destroying the library created DOM changes in order. We use flags to track which pieces of javascript fire and when. We use an ID to track the current working table. We acknowledge that onAfterRenderAsync is run more often that once per load. Finally, we add minimal delays so that the server has time to begin rerendering changes in memory.
